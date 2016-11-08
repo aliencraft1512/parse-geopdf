@@ -5,7 +5,6 @@ var minimist = require('minimist')
 var _ = require('lodash')
 var cheerio = require('cheerio')
 var parse = require('parse-svg-path')
-var xml2js = require('xml2js');
 
 
 //Getting the filename arg
@@ -22,36 +21,17 @@ var path = __dirname + '/' + fileName
 
 
 
-let parser = new xml2js.Parser()
-parser.parseString(fs.readFileSync(path),(err, result) => {
-	console.dir(result);
-	console.log('Done');
-})
-
-
-//let svgData = parseSVG(path)
-
+let svgData = parseSVG(path)
 //console.log(elements.length + ' elements')
-
-// console.log(svgData.elements[1][0])
-// console.log('svgData')
+//console.log(svgData.elements[1][0])
+console.log(svgData.elements[1][3].elements)
+console.log('svgData')
 //console.log(wrapSVG(elements))
 
 //console.log('groups output')
 //console.log(groups)
 process.exit()
 
-
-//Takes in an SVG file, returns an array of paths elements
-function parseSVGPaths(filepath){
-
-	$ = cheerio.load(fs.readFileSync(path))
-	var paths = _.reduce($('path'), function (items, path) {
-		items.push($(path).attr('d'))
-		return items
-	}, [])
-
-	return paths }
 
 function parseSVG(filepath){
 
@@ -102,9 +82,38 @@ function parseSVG(filepath){
 	//return groups
 }
 
+
+
+function parseParentElements(parent){
+
+		let allowedTags = ['g','clippath','path']
+
+		return _.reduce(parent.children,(items,element) => {
+
+			//Omit empty items
+			if(element.data && element.data.indexOf('\n') != -1){ 
+				return items 
+			} else {
+
+				if(_.indexOf(allowedTags,element.name) != -1){
+					items.push(parseElement(element))
+				} else {
+
+					console.log('not parsing <' + element.name + '>')
+					//console.log('IMPOSSABRU')
+					//process.exit()
+
+				}
+				return items
+			}
+
+		},[])
+	
+}
+
 function parseElement(element){
 
-	console.log('parsing <' + element.name + '>')
+	//console.log('parsing <' + element.name + '>')
 
 	let parsedElement = {
 		'type': element.type,
@@ -129,60 +138,13 @@ function parseElement(element){
 		}
 	}
 
+	if(element.hasOwnProperty('children')){
+		parsedElement.elements = parseParentElements(element)
+		parsedElement.children = parsedElement.elements.length
+	}
+
 	return parsedElement
 
-}
-
-function parseParentElements(parent){
-
-
-		return _.reduce(parent.children,(items,element) => {
-
-			//Avoid empty text elements
-			//if(element.data.indexOf('\n') != -1) return false
-
-			if(!element.data){
-				//console.log(element)
-				//process.exit()
-
-			}
-
-			if(element.data && element.data.indexOf('\n') != -1){ 
-				
-				return items 
-
-			} else {
-
-				if(element.name === 'clippath' || element.name === 'g') {
-
-						//console.log(parsedElement)
-						let chElements = _.reduce(element.children,(chItems,chElement) =>{
-
-							if(chElement.data && chElement.data.indexOf('\n') != -1){ 
-								
-								return chItems 
-
-							} else {
-
-								return parseElement(chElement)
-							}
-
-						},[])
-
-						let chElementContainer = parseElement(element)
-						chElementContainer.elements = chElements
-						items.push(chElementContainer)
-						return items
-				}
-
-				items.push(parseElement(element))
-
-				return items
-
-			}
-
-		},[])
-	
 }
 
 // Format the path array that parse() returns for use with clipper-js
