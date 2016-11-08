@@ -5,6 +5,7 @@ var minimist = require('minimist')
 var _ = require('lodash')
 var cheerio = require('cheerio')
 var parse = require('parse-svg-path')
+var xml2js = require('xml2js');
 
 
 //Getting the filename arg
@@ -18,15 +19,28 @@ if(fileName == '' || fileName == undefined) thr('Enter a relative file path')
 
 //File expects svg to be processes
 var path = __dirname + '/' + fileName
-let elements = parseSVG(path)
+
+
+
+let parser = new xml2js.Parser()
+parser.parseString(fs.readFileSync(path),(err, result) => {
+	console.dir(result);
+	console.log('Done');
+})
+
+
+//let svgData = parseSVG(path)
 
 //console.log(elements.length + ' elements')
 
-console.log(wrapSVG(elements))
+// console.log(svgData.elements[1][0])
+// console.log('svgData')
+//console.log(wrapSVG(elements))
 
 //console.log('groups output')
 //console.log(groups)
 process.exit()
+
 
 //Takes in an SVG file, returns an array of paths elements
 function parseSVGPaths(filepath){
@@ -37,75 +51,138 @@ function parseSVGPaths(filepath){
 		return items
 	}, [])
 
-	return paths
-}
+	return paths }
 
 function parseSVG(filepath){
 
 	let $ = cheerio.load(fs.readFileSync(path))
-	var groups = _.reduce($('g'), function (items, group) {
 
-		//let groupId = $(group).attr('id')
-		//items[groupId] = parseGroupElements(group)
-		let groupElements = parseGroupElements(group)
-		if(!_.isEmpty(groupElements)) items.push(groupElements)
-		return items
-		
-	}, [])	
+	let root = $(':root')
 
-	return groups
+	let outputDocument = {
+		width: root[0].attribs.width,
+		height: root[0].attribs.height,
+		viewbox: root[0].attribs.viewbox,
+		elements: []
+	}
+
+	let documentElements = root[0].children
+
+	outputDocument.elements = _.reduce(documentElements,(items,element) =>{
+
+		if(element.hasOwnProperty('children')){ 
+			let outputStr = '<' + element.name + '>'
+			if(element.hasOwnProperty('children')) outputStr +=  ' children: ' + element.children.length
+			console.log(outputStr)
+
+			if(element.type === 'text' && element.data.indexOf('\n') != -1){
+				console.log('Weird empty ext string thing')
+
+			} else {
+
+				let elemChildren = parseParentElements(element)
+
+				//console.log(elemChildren)
+				//process.exit()
+
+
+				items.push(elemChildren)
+				return items
+
+			}
+		} else {
+			return items			
+		}
+
+
+
+	},[])
+	
+	return outputDocument
+	//return groups
 }
 
-//Takes in a group, returns an array of paths
-function parseGroupElements(group){
+function parseElement(element){
 
-	let $ = cheerio.load(group)
+	console.log('parsing <' + element.name + '>')
 
-	var elements = _.reduce($('*'), function (items, element) {
-		
-		//let elemMessage = element.name + ' - children: ' + element.children.length
-		//console.log(elemMessage)
-		//Ignore text layers
+	let parsedElement = {
+		'type': element.type,
+		'name': element.name,
+		'attrs': element.attribs,
+		//'data': element.data,
+		//'children': element.children
+	}	
 
-		if(element.name === 'g') return parseGroupElements(element.children)
+	if(element.name === 'path'){
+		//Exclude white text elements
+		//Exclude orange grid
+		//Exclude pink text
+		let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
+		if(_.indexOf(excludedColors,element.attribs.stroke) === -1 && _.indexOf(excludedColors,element.attribs.fill) === -1){
 
-		let parsedElement = {
-			'type' : element.name
+			parsedElement.path = element.attribs.d
+			parsedElement.fill = element.attribs.fill
+			parsedElement.stroke = element.attribs.stroke
+
+			//return parsedElement
 		}
+	}
 
-		if(element.name === 'path'){
+	return parsedElement
 
-			//Exclude white text elements
-			//Exclude orange grid
-			//Exclude pink text
-			let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
-			if(_.indexOf(excludedColors,element.attribs.stroke) === -1 && _.indexOf(excludedColors,element.attribs.fill) === -1){
+}
 
+function parseParentElements(parent){
+
+
+		return _.reduce(parent.children,(items,element) => {
+
+			//Avoid empty text elements
+			//if(element.data.indexOf('\n') != -1) return false
+
+			if(!element.data){
 				//console.log(element)
 				//process.exit()
-				parsedElement.path = element.attribs.d
-				parsedElement.fill = element.attribs.fill
-				parsedElement.stroke = element.attribs.stroke
-				items.push(parsedElement)
-			} 
 
-		} else {
+			}
 
-				// console.log('excluded element')
-				// console.log(element.attribs.stroke)
-				// console.log(element.attribs.fill)
-				// console.log('--------')			
+			if(element.data && element.data.indexOf('\n') != -1){ 
+				
+				return items 
 
-			//console.log('not parsing ' + element.name)
-		}
+			} else {
 
-		return items
+				if(element.name === 'clippath' || element.name === 'g') {
 
-		//return (element.name + ' - children: ' + element.children.length)
-	}, [])	
+						//console.log(parsedElement)
+						let chElements = _.reduce(element.children,(chItems,chElement) =>{
 
-	return elements
-		
+							if(chElement.data && chElement.data.indexOf('\n') != -1){ 
+								
+								return chItems 
+
+							} else {
+
+								return parseElement(chElement)
+							}
+
+						},[])
+
+						let chElementContainer = parseElement(element)
+						chElementContainer.elements = chElements
+						items.push(chElementContainer)
+						return items
+				}
+
+				items.push(parseElement(element))
+
+				return items
+
+			}
+
+		},[])
+	
 }
 
 // Format the path array that parse() returns for use with clipper-js
