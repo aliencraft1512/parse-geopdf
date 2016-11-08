@@ -18,20 +18,28 @@ if(fileName == '' || fileName == undefined) thr('Enter a relative file path')
 
 //File expects svg to be processes
 var path = __dirname + '/' + fileName
-
-
-
 let svgData = parseSVG(path)
-//console.log(elements.length + ' elements')
-//console.log(svgData.elements[1][0])
-console.log(svgData.elements[1][3].elements)
-console.log('svgData')
-//console.log(wrapSVG(elements))
 
-//console.log('groups output')
-//console.log(groups)
+
+let cleanedMapData = cleanMapData(svgData)
+
 process.exit()
 
+
+function cleanMapData(svgData){
+
+	let outputDocument = svgData
+
+	//Remove clippaths, they don't seem to matter for this use case
+	delete svgData.elements[0]
+
+	let payloadData = svgData.elements[1]
+
+	_.each(payloadData,(item, index) => {
+		console.log(index + ' ' + item.name + ' children: ' + item.children)
+	})
+
+}
 
 function parseSVG(filepath){
 
@@ -51,21 +59,12 @@ function parseSVG(filepath){
 	outputDocument.elements = _.reduce(documentElements,(items,element) =>{
 
 		if(element.hasOwnProperty('children')){ 
-			let outputStr = '<' + element.name + '>'
-			if(element.hasOwnProperty('children')) outputStr +=  ' children: ' + element.children.length
-			console.log(outputStr)
 
 			if(element.type === 'text' && element.data.indexOf('\n') != -1){
 				console.log('Weird empty ext string thing')
-
 			} else {
 
 				let elemChildren = parseParentElements(element)
-
-				//console.log(elemChildren)
-				//process.exit()
-
-
 				items.push(elemChildren)
 				return items
 
@@ -79,10 +78,25 @@ function parseSVG(filepath){
 	},[])
 	
 	return outputDocument
-	//return groups
 }
 
+//Return an XML 'attribute="value"' string per element attribute excluding children, name, type
+function elementAttributeString(element){
 
+
+
+}
+
+function markupElements(payload){
+
+	return _.reduce(payload,(items,element) => {
+
+		let element = '<' + element.name + ' '  + elementAttributeString(element) + '>'
+		if(element.elements) element += markupElements(element.elements)
+		element += '</' + element.name + '>'
+
+	}[])
+}
 
 function parseParentElements(parent){
 
@@ -90,22 +104,10 @@ function parseParentElements(parent){
 
 		return _.reduce(parent.children,(items,element) => {
 
-			//Omit empty items
-			if(element.data && element.data.indexOf('\n') != -1){ 
-				return items 
-			} else {
-
-				if(_.indexOf(allowedTags,element.name) != -1){
-					items.push(parseElement(element))
-				} else {
-
-					console.log('not parsing <' + element.name + '>')
-					//console.log('IMPOSSABRU')
-					//process.exit()
-
-				}
-				return items
-			}
+			if(_.indexOf(allowedTags,element.name) != -1){
+				items.push(parseElement(element))
+			} 
+			return items			
 
 		},[])
 	
@@ -118,10 +120,13 @@ function parseElement(element){
 	let parsedElement = {
 		'type': element.type,
 		'name': element.name,
-		'attrs': element.attribs,
+		//'attrs': element.attribs,
 		//'data': element.data,
 		//'children': element.children
-	}	
+	}
+
+	if(element.attribs.id) parsedElement.id = element.attribs.id
+	if(element.attribs.opacity) parsedElement.opacity = element.attribs.opacity
 
 	if(element.name === 'path'){
 		//Exclude white text elements
@@ -130,15 +135,20 @@ function parseElement(element){
 		let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
 		if(_.indexOf(excludedColors,element.attribs.stroke) === -1 && _.indexOf(excludedColors,element.attribs.fill) === -1){
 
-			parsedElement.path = element.attribs.d
-			parsedElement.fill = element.attribs.fill
-			parsedElement.stroke = element.attribs.stroke
+			parsedElement.d = element.attribs.d
+			if(element.attribs.fill) parsedElement.fill = element['fill']
+			if(element.attribs.stroke) parsedElement.stroke = element['stroke']
+			if(element.attribs.['fill-opacity']) parsedElement.['fill-opacity'] = element['fill-opacity']
+			if(element.attribs.['stroke-width']) parsedElement.['stroke-width'] = element['stroke-width']
+			if(element.attribs.['stroke-linecap']) parsedElement.['stroke-linecap'] = element['stroke-linecap']
 
-			//return parsedElement
+			console.log(element)
+			process.exit()
+
 		}
 	}
 
-	if(element.hasOwnProperty('children')){
+	if(element.hasOwnProperty('children') && !_.isEmpty(element.children)){
 		parsedElement.elements = parseParentElements(element)
 		parsedElement.children = parsedElement.elements.length
 	}
