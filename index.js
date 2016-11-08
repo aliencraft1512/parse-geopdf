@@ -18,94 +18,133 @@ if(fileName == '' || fileName == undefined) thr('Enter a relative file path')
 
 //File expects svg to be processes
 var path = __dirname + '/' + fileName
-let elements = parseSVG(path)
 
+
+
+let svgData = parseSVG(path)
 //console.log(elements.length + ' elements')
-
-console.log(wrapSVG(elements))
+//console.log(svgData.elements[1][0])
+console.log(svgData.elements[1][3].elements)
+console.log('svgData')
+//console.log(wrapSVG(elements))
 
 //console.log('groups output')
 //console.log(groups)
 process.exit()
 
-//Takes in an SVG file, returns an array of paths elements
-function parseSVGPaths(filepath){
-
-	$ = cheerio.load(fs.readFileSync(path))
-	var paths = _.reduce($('path'), function (items, path) {
-		items.push($(path).attr('d'))
-		return items
-	}, [])
-
-	return paths
-}
 
 function parseSVG(filepath){
 
 	let $ = cheerio.load(fs.readFileSync(path))
-	var groups = _.reduce($('g'), function (items, group) {
 
-		//let groupId = $(group).attr('id')
-		//items[groupId] = parseGroupElements(group)
-		let groupElements = parseGroupElements(group)
-		if(!_.isEmpty(groupElements)) items.push(groupElements)
-		return items
-		
-	}, [])	
+	let root = $(':root')
 
-	return groups
+	let outputDocument = {
+		width: root[0].attribs.width,
+		height: root[0].attribs.height,
+		viewbox: root[0].attribs.viewbox,
+		elements: []
+	}
+
+	let documentElements = root[0].children
+
+	outputDocument.elements = _.reduce(documentElements,(items,element) =>{
+
+		if(element.hasOwnProperty('children')){ 
+			let outputStr = '<' + element.name + '>'
+			if(element.hasOwnProperty('children')) outputStr +=  ' children: ' + element.children.length
+			console.log(outputStr)
+
+			if(element.type === 'text' && element.data.indexOf('\n') != -1){
+				console.log('Weird empty ext string thing')
+
+			} else {
+
+				let elemChildren = parseParentElements(element)
+
+				//console.log(elemChildren)
+				//process.exit()
+
+
+				items.push(elemChildren)
+				return items
+
+			}
+		} else {
+			return items			
+		}
+
+
+
+	},[])
+	
+	return outputDocument
+	//return groups
 }
 
-//Takes in a group, returns an array of paths
-function parseGroupElements(group){
 
-	let $ = cheerio.load(group)
 
-	var elements = _.reduce($('*'), function (items, element) {
-		
-		//let elemMessage = element.name + ' - children: ' + element.children.length
-		//console.log(elemMessage)
-		//Ignore text layers
+function parseParentElements(parent){
 
-		if(element.name === 'g') return parseGroupElements(element.children)
+		let allowedTags = ['g','clippath','path']
 
-		let parsedElement = {
-			'type' : element.name
+		return _.reduce(parent.children,(items,element) => {
+
+			//Omit empty items
+			if(element.data && element.data.indexOf('\n') != -1){ 
+				return items 
+			} else {
+
+				if(_.indexOf(allowedTags,element.name) != -1){
+					items.push(parseElement(element))
+				} else {
+
+					console.log('not parsing <' + element.name + '>')
+					//console.log('IMPOSSABRU')
+					//process.exit()
+
+				}
+				return items
+			}
+
+		},[])
+	
+}
+
+function parseElement(element){
+
+	//console.log('parsing <' + element.name + '>')
+
+	let parsedElement = {
+		'type': element.type,
+		'name': element.name,
+		'attrs': element.attribs,
+		//'data': element.data,
+		//'children': element.children
+	}	
+
+	if(element.name === 'path'){
+		//Exclude white text elements
+		//Exclude orange grid
+		//Exclude pink text
+		let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
+		if(_.indexOf(excludedColors,element.attribs.stroke) === -1 && _.indexOf(excludedColors,element.attribs.fill) === -1){
+
+			parsedElement.path = element.attribs.d
+			parsedElement.fill = element.attribs.fill
+			parsedElement.stroke = element.attribs.stroke
+
+			//return parsedElement
 		}
+	}
 
-		if(element.name === 'path'){
+	if(element.hasOwnProperty('children')){
+		parsedElement.elements = parseParentElements(element)
+		parsedElement.children = parsedElement.elements.length
+	}
 
-			//Exclude white text elements
-			//Exclude orange grid
-			//Exclude pink text
-			let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
-			if(_.indexOf(excludedColors,element.attribs.stroke) === -1 && _.indexOf(excludedColors,element.attribs.fill) === -1){
+	return parsedElement
 
-				//console.log(element)
-				//process.exit()
-				parsedElement.path = element.attribs.d
-				parsedElement.fill = element.attribs.fill
-				parsedElement.stroke = element.attribs.stroke
-				items.push(parsedElement)
-			} 
-
-		} else {
-
-				// console.log('excluded element')
-				// console.log(element.attribs.stroke)
-				// console.log(element.attribs.fill)
-				// console.log('--------')			
-
-			//console.log('not parsing ' + element.name)
-		}
-
-		return items
-
-		//return (element.name + ' - children: ' + element.children.length)
-	}, [])	
-
-	return elements
-		
 }
 
 // Format the path array that parse() returns for use with clipper-js
