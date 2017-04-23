@@ -4,6 +4,7 @@
   "description": "Parse GeoPDF format file (.pdf) into a more well organized SVG document.",
   "main": "index.js",
   "scripts": {
+    "run" : "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Mat Gilbert <matgilbert@gmail.com> (http://www.matgilbert.com)",

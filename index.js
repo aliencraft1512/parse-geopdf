@@ -19,25 +19,53 @@ if(fileName == '' || fileName == undefined) thr('Enter a relative file path')
 //File expects svg to be processes
 var path = __dirname + '/' + fileName
 let svgData = parseSVG(path)
-
-
 let cleanedMapData = cleanMapData(svgData)
 
+console.log(cleanedMapData)
 process.exit()
 
 
 function cleanMapData(svgData){
 
-	let outputDocument = svgData
+	let strOutput = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+	strOutput += '<svg' + elementAttributeString(svgData) + ' xmlns="http://www.w3.org/2000/svg" version="1.1">'
 
 	//Remove clippaths, they don't seem to matter for this use case
 	delete svgData.elements[0]
-
 	let payloadData = svgData.elements[1]
+	let markupStrings = _.reduce(payloadData,(result, value, key)=>{
+		
+		//if(value.children > 0){
+			let markedupElement = markupElement(value)
+			result.push(markedupElement)		
+		//} 
+		
+		return result
 
-	_.each(payloadData,(item, index) => {
-		console.log(index + ' ' + item.name + ' children: ' + item.children)
+	},[])
+
+
+	let excludedIndexes =[
+		0, //US Topo Label on top fo map
+		1, //Numbers for grid on outside edge of map
+		2, //Edge grid ticks
+		3, //Crosses in middle of map
+		4, //White box
+		5, //Highway circles
+
+	]
+
+	_.each(markupStrings,(elemString, index) => {
+
+	// 	if(_.indexOf(excludedIndexes,index) === -1){
+			strOutput += elemString
+	// 	}
+
 	})
+
+	strOutput += '</svg>'
+
+	return strOutput
 
 }
 
@@ -65,6 +93,9 @@ function parseSVG(filepath){
 			} else {
 
 				let elemChildren = parseParentElements(element)
+
+				//console.log(elemChildren)
+
 				items.push(elemChildren)
 				return items
 
@@ -82,35 +113,46 @@ function parseSVG(filepath){
 
 //Return an XML 'attribute="value"' string per element attribute excluding children, name, type
 function elementAttributeString(element){
+	
+	let excludedAttributes = ['elements','type','children','name']
 
-
-
+	return _.reduce(element,(attrString,attrVal,attrName) => {
+		if(_.indexOf(excludedAttributes,attrName) === -1 && attrVal != undefined){
+			return attrString += ' ' + attrName + '="' + attrVal + '"'
+		} else {
+			return attrString
+		}
+	},'')
 }
 
-function markupElements(payload){
+function markupElement(payload){
 
-	return _.reduce(payload,(items,element) => {
+	let tagName = payload.name
+	let elementString = '<' + tagName + elementAttributeString(payload) + '>'
+	if(payload.elements){
 
-		let element = '<' + element.name + ' '  + elementAttributeString(element) + '>'
-		if(element.elements) element += markupElements(element.elements)
-		element += '</' + element.name + '>'
-
-	}[])
+		let childElementsString = ''
+		_.each(payload.elements,(childElement) => {
+			childElementsString += markupElement(childElement)	
+		})
+		elementString += childElementsString
+	}
+	elementString += '</' + tagName + '>'
+	return elementString
 }
 
 function parseParentElements(parent){
 
-		let allowedTags = ['g','clippath','path']
+	let allowedTags = ['g','clippath','path']
 
-		return _.reduce(parent.children,(items,element) => {
+	return _.reduce(parent.children,(items,element) => {
 
-			if(_.indexOf(allowedTags,element.name) != -1){
-				items.push(parseElement(element))
-			} 
-			return items			
+		if(_.indexOf(allowedTags,element.name) != -1){
+			items.push(parseElement(element))
+		} 
+		return items			
 
-		},[])
-	
+	},[])	
 }
 
 function parseElement(element){
@@ -132,18 +174,20 @@ function parseElement(element){
 		//Exclude white text elements
 		//Exclude orange grid
 		//Exclude pink text
-		let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
+		//let excludedColors = ['#FFB800','#FFFFFF','#F0D1D0','#DADADA']
+		let excludedColors = []
 		if(_.indexOf(excludedColors,element.attribs.stroke) === -1 && _.indexOf(excludedColors,element.attribs.fill) === -1){
 
 			parsedElement.d = element.attribs.d
-			if(element.attribs.fill) parsedElement.fill = element['fill']
+			if(element.attribs.fill){ 
+				parsedElement.fill = element['fill']
+			} else {
+				parsedElement.fill = 'none'
+			}
 			if(element.attribs.stroke) parsedElement.stroke = element['stroke']
-			if(element.attribs.['fill-opacity']) parsedElement.['fill-opacity'] = element['fill-opacity']
-			if(element.attribs.['stroke-width']) parsedElement.['stroke-width'] = element['stroke-width']
-			if(element.attribs.['stroke-linecap']) parsedElement.['stroke-linecap'] = element['stroke-linecap']
-
-			console.log(element)
-			process.exit()
+			if(element.attribs['fill-opacity']) parsedElement['fill-opacity'] = element['fill-opacity']
+			if(element.attribs['stroke-width']) parsedElement['stroke-width'] = element['stroke-width']
+			if(element.attribs['stroke-linecap']) parsedElement['stroke-linecap'] = element['stroke-linecap']
 
 		}
 	}
@@ -167,8 +211,8 @@ function formatPathArr(array){
 		if(item[0] == 'M' || item[0] == 'L'){
 			pathArr.push({X: item[1], Y: item[2]})
 		} else {
-			console.log('unparseable')
-			console.log(item)
+			//console.log('unparseable')
+			//console.log(item)
 		}
 	})
 
